@@ -25,7 +25,8 @@ Run these once per tenant. After that, the IDs go into each sample's `.env` (loc
 | [`EntraAgentID-Functions.ps1`](EntraAgentID-Functions.ps1) | The main module. Exposes `Start-EntraAgentIDWorkflow` plus a set of lower-level helpers. |
 | [`setup-obo-blueprint.ps1`](setup-obo-blueprint.ps1) | Adds the `access_as_user` scope to a Blueprint and grants a Client SPA permission against it. PowerShell edition. |
 | [`setup-obo-blueprint.sh`](setup-obo-blueprint.sh) | Same workflow in bash, for CI systems without PowerShell. |
-| [`setup-obo-client-app.sh`](setup-obo-client-app.sh) | Creates the Client SPA if one doesn't already exist in the tenant. |
+| [`setup-obo-client-app.ps1`](setup-obo-client-app.ps1) | Creates the Client SPA if one doesn't already exist in the tenant. PowerShell edition. |
+| [`setup-obo-client-app.sh`](setup-obo-client-app.sh) | Same workflow in bash, for CI systems without PowerShell. |
 
 ## One-shot bootstrap
 

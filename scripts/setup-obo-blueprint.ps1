@@ -25,7 +25,11 @@ Write-Host "━━━━━━━━━━━━━━━━━━━━━━�
 Write-Host ""
 
 # ── Import and connect ──────────────────────────────────────────────────────
-Import-Module Microsoft.Graph.Beta.Applications
+if (-not (Get-Module -ListAvailable -Name Microsoft.Graph.Authentication)) {
+    Write-Error "Install Microsoft Graph PowerShell: Install-Module Microsoft.Graph.Authentication -Scope CurrentUser"
+    exit 1
+}
+Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
 
 Write-Host "🔐 Connecting to Microsoft Graph..."
 Write-Host "   (A browser window will open for sign-in)"
