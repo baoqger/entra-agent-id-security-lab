@@ -559,6 +559,8 @@ function Get-AgentIdentityToken {
     
     $agentToken = $t2Response.access_token
     Write-Host "  [OK] Got T2 token (Agent identity)" -ForegroundColor Green
+    Write-Host "  AccessToken (full):" -ForegroundColor Gray
+    Write-Host $agentToken -ForegroundColor DarkGray
     
     if ($ShowClaims) {
         Write-Host "  T2 Claims:" -ForegroundColor Gray
