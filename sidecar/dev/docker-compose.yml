@@ -20,13 +20,14 @@ services:
       - AzureAd__ClientCredentials__0__ClientSecret=${BLUEPRINT_CLIENT_SECRET}
       
       # Downstream API: autonomous / app-only (client credentials)
-      - DownstreamApis__graph-app__BaseUrl=https://graph.microsoft.com/v1.0/
-      - DownstreamApis__graph-app__Scopes__0=https://graph.microsoft.com/.default
-      - DownstreamApis__graph-app__RequestAppToken=true
+      # "weather-app" matches app.py; scope targets custom API (setup-weather-api-resource.ps1).
+      - DownstreamApis__weather-app__BaseUrl=http://weather-api:8080/
+      - DownstreamApis__weather-app__Scopes__0=api://${WEATHER_API_APP_ID}/.default
+      - DownstreamApis__weather-app__RequestAppToken=true
       
-      # Downstream API: OBO / delegated (on-behalf-of user)
-      - DownstreamApis__graph__BaseUrl=https://graph.microsoft.com/v1.0/
-      - DownstreamApis__graph__Scopes__0=https://graph.microsoft.com/.default
+      # Downstream API: OBO / delegated (on-behalf-of user) — still Graph until Phase 2
+      - DownstreamApis__weather__BaseUrl=http://weather-api:8080/
+      - DownstreamApis__weather__Scopes__0=https://graph.microsoft.com/.default
       
       # ASP.NET Core settings
       - ASPNETCORE_ENVIRONMENT=Production

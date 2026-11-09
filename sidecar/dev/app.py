@@ -84,7 +84,7 @@ def get_agent_token():
     log_debug("2.A TOKEN REQUEST", f"Requesting token for Agent: {AGENT_APP_ID}")
     
     try:
-        url = f"{SIDECAR_URL}/AuthorizationHeaderUnauthenticated/graph-app?AgentIdentity={AGENT_APP_ID}"
+        url = f"{SIDECAR_URL}/AuthorizationHeaderUnauthenticated/weather-app?AgentIdentity={AGENT_APP_ID}"
         log_debug("2.B SIDECAR CALL", f"Sidecar URL: {url}")
         
         response = requests.get(url, timeout=30, headers={"Host": "localhost"})
@@ -122,7 +122,7 @@ def get_agent_token_obo(user_token=None):
     })
     
     try:
-        url = f"{SIDECAR_URL}/AuthorizationHeader/graph?AgentIdentity={AGENT_APP_ID}"
+        url = f"{SIDECAR_URL}/AuthorizationHeader/weather?AgentIdentity={AGENT_APP_ID}"
         tc_snippet = ""
         if user_token:
             raw = user_token.replace("Bearer ", "") if user_token.startswith("Bearer ") else user_token
@@ -176,7 +176,7 @@ def get_agent_token_obo(user_token=None):
 def get_t1_token_claims():
     """Get the app-only (T1) token claims for display purposes."""
     try:
-        url = f"{SIDECAR_URL}/AuthorizationHeaderUnauthenticated/graph-app?AgentIdentity={AGENT_APP_ID}"
+        url = f"{SIDECAR_URL}/AuthorizationHeaderUnauthenticated/weather-app?AgentIdentity={AGENT_APP_ID}"
         response = requests.get(url, timeout=30, headers={"Host": "localhost"})
         response.raise_for_status()
         result = response.json()
