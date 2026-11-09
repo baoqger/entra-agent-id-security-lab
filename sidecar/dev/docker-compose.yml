@@ -44,6 +44,8 @@ services:
       # Full JWKS signature validation (default: true). Set 'false' to disable.
       - VALIDATE_TOKEN_SIGNATURE=${VALIDATE_TOKEN_SIGNATURE:-true}
       - TENANT_ID=${TENANT_ID}
+      # Must match TR aud (custom API from setup-weather-api-resource.ps1)
+      - EXPECTED_AUDIENCE=api://${WEATHER_API_APP_ID}
     networks:
       - agent-network-dev
     healthcheck:
