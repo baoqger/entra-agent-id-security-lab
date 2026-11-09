@@ -27,6 +27,7 @@ Run these once per tenant. After that, the IDs go into each sample's `.env` (loc
 | [`setup-obo-blueprint.sh`](setup-obo-blueprint.sh) | Same workflow in bash, for CI systems without PowerShell. |
 | [`setup-obo-client-app.ps1`](setup-obo-client-app.ps1) | Creates the Client SPA if one doesn't already exist in the tenant. PowerShell edition. |
 | [`setup-obo-client-app.sh`](setup-obo-client-app.sh) | Same workflow in bash, for CI systems without PowerShell. |
+| [`setup-weather-api-resource.ps1`](setup-weather-api-resource.ps1) | Registers a **custom API** app for the sample `weather-api`, exposes app role `Weather.Read`, assigns it to the Agent Identity (autonomous / custom `aud`). |
 
 ## One-shot bootstrap
 
@@ -47,6 +48,17 @@ Agent Permissions:    User.Read.All (granted)
 ```
 
 Save these values — you'll paste them into each sample's `.env` next.
+
+## Custom Weather API audience (optional)
+
+After bootstrap, run this **once** if you want autonomous Agent tokens whose `aud` is your own API (not Microsoft Graph):
+
+```powershell
+cd scripts
+pwsh ./setup-weather-api-resource.ps1 -UpdateEnv
+```
+
+Then update `sidecar/dev/docker-compose.yml` — set `DownstreamApis__weather-app__Scopes__0` to the script's `api://{WEATHER_API_APP_ID}/.default` line — and recreate the sidecar container. OBO to the same custom API is a separate follow-up (delegated scopes); this script only wires **autonomous** `Weather.Read`.
 
 ## Walkthrough: end-to-end verification
 
