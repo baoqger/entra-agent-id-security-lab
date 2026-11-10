@@ -57,6 +57,25 @@ def _get_jwks_client() -> PyJWKClient:
     return _jwks_client
 
 
+def _entra_issuers_for_tenant(tenant_id: str) -> list[str]:
+    """Issuers Microsoft Entra may emit for the same tenant (v1 vs v2, casing)."""
+    tid = tenant_id.strip()
+    if not tid:
+        return []
+    # Do not rely on a single v2.0 issuer — access tokens may use sts.windows.net (v1).
+    return [
+        f"https://login.microsoftonline.com/{tid}/v2.0",
+        f"https://login.microsoftonline.com/{tid.lower()}/v2.0",
+        f"https://login.microsoftonline.com/{tid}/",
+        f"https://sts.windows.net/{tid}/",
+        f"https://sts.windows.net/{tid.lower()}/",
+    ]
+
+
+def _tenant_ids_match(a: str, b: str) -> bool:
+    return bool(a and b and a.strip().lower() == b.strip().lower())
+
+
 async def _find_signing_key(token: str):
     """Kept for backwards compat - returns the signing key via PyJWKClient."""
     return _get_jwks_client().get_signing_key_from_jwt(token).key
@@ -133,7 +152,10 @@ async def get_current_user(
     try:
         signing_key = _get_jwks_client().get_signing_key_from_jwt(token).key
 
-        issuer = f"https://login.microsoftonline.com/{settings.azure_tenant_id}/v2.0"
+        valid_issuers = _entra_issuers_for_tenant(settings.azure_tenant_id)
+        if not valid_issuers:
+            raise HTTPException(status_code=500, detail="AZURE_TENANT_ID is not configured")
+
         valid_audiences = [
             f"api://{settings.azure_client_id}",
             settings.azure_client_id,
@@ -145,8 +167,17 @@ async def get_current_user(
             signing_key,
             algorithms=["RS256"],
             audience=valid_audiences,
-            issuer=issuer,
+            issuer=valid_issuers,
         )
+
+        token_tid = claims.get("tid")
+        if token_tid and not _tenant_ids_match(token_tid, settings.azure_tenant_id):
+            logger.warning(
+                "Token tenant tid=%s does not match AZURE_TENANT_ID=%s",
+                token_tid,
+                settings.azure_tenant_id,
+            )
+            raise HTTPException(status_code=401, detail="Token tenant mismatch")
 
         if "preferred_username" not in claims and "upn" in claims:
             claims["preferred_username"] = claims["upn"]
@@ -163,7 +194,26 @@ async def get_current_user(
         return claims
 
     except InvalidTokenError as exc:
-        logger.warning("JWT validation failed: %s", exc)
+        try:
+            unverified = pyjwt.decode(
+                token,
+                options={
+                    "verify_signature": False,
+                    "verify_aud": False,
+                    "verify_iss": False,
+                    "verify_exp": False,
+                },
+            )
+            logger.warning(
+                "JWT validation failed: %s (iss=%r tid=%r aud=%r, expected tenant=%s)",
+                exc,
+                unverified.get("iss"),
+                unverified.get("tid"),
+                unverified.get("aud"),
+                settings.azure_tenant_id,
+            )
+        except Exception:
+            logger.warning("JWT validation failed: %s", exc)
         raise HTTPException(status_code=401, detail="Token validation failed")
 
 
