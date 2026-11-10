@@ -135,8 +135,8 @@ async def get_current_user(
 
         issuer = f"https://login.microsoftonline.com/{settings.azure_tenant_id}/v2.0"
         valid_audiences = [
-            f"api://{settings.frontend_client_id}",
-            settings.frontend_client_id,
+            f"api://{settings.azure_client_id}",
+            settings.azure_client_id,
         ]
 
         # PyJWT validates aud, iss, exp, iat, nbf, and signature in one call.

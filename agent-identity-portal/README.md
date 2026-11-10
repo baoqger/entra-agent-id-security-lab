@@ -64,24 +64,37 @@ Open <http://localhost:3000>.
 
 ## Live mode (against your own Entra tenant)
 
-### 1. App registrations
+### 1. Entra app registrations (automated)
 
-Create **two** app registrations in your tenant:
+From the repo root:
 
-1. **Backend (confidential client)**
-   - API permissions (Microsoft Graph, **Application** type, admin consent granted):
-     - `Application.ReadWrite.OwnedBy` (for writing to `applications`/`servicePrincipals`)
-     - `Directory.Read.All` (to resolve a signed-in user's directory roles)
-   - Expose an API: `api://{backend-client-id}/access_as_user` scope
-   - Configure one of the credential options below
+```powershell
+cd agent-identity-portal/scripts
+Copy-Item ..\backend\.env.example ..\backend\.env
+Copy-Item ..\frontend\.env.example ..\frontend\.env
+pwsh ./setup-portal-entra-apps.ps1 -TenantId '<your-tenant-id>' -UpdateEnv
+```
 
-2. **SPA (public client)**
-   - Redirect URI: `http://localhost:3000` (and your deployed URL)
-   - API permissions: delegated `access_as_user` on the backend app
-   - Grant admin consent
+This script creates or updates:
+
+1. **Backend (confidential client)** — exposes `api://{backend-client-id}/access_as_user`, grants Microsoft Graph **application** permissions (see [scripts/README.md](scripts/README.md)), and optionally mints a dev client secret.
+2. **SPA (public client)** — redirect URIs, delegated `access_as_user` on the backend API, admin consent.
+
+Add a deployed SPA URL:
+
+```powershell
+pwsh ./setup-portal-entra-apps.ps1 -TenantId '<id>' `
+  -RedirectUris @('https://your-spa.azurestaticapps.net') `
+  -FrontendOrigin 'http://localhost:3000,https://your-spa.azurestaticapps.net' `
+  -UpdateEnv
+```
+
+Use `-SkipClientSecret` when the backend will use managed identity or certificate only.
 
 > The portal's *approvers* are identified by holding the
 > **Global Administrator** or **Agent ID Administrator** Entra directory role.
+
+Manual portal steps are still documented in [scripts/README.md](scripts/README.md) (permission table and troubleshooting).
 
 ### 2. Backend `.env`
 
@@ -120,9 +133,12 @@ TEAMS_WEBHOOK_URL=https://<tenant>.webhook.office.com/...
 ```ini
 REACT_APP_API_BASE_URL=https://<your-backend-host>
 REACT_APP_AZURE_CLIENT_ID=<spa-app-client-id>
+REACT_APP_API_CLIENT_ID=<backend-api-client-id>
 REACT_APP_AZURE_TENANT_ID=<your-tenant-id>
 REACT_APP_AZURE_REDIRECT_URI=https://<your-spa-host>
 ```
+
+`REACT_APP_AZURE_CLIENT_ID` is the SPA (MSAL sign-in). `REACT_APP_API_CLIENT_ID` is the backend API app id used for `api://{id}/access_as_user` tokens.
 
 ## API reference
 
@@ -147,8 +163,9 @@ OpenAPI spec is served at `/openapi.json` **only when** `ENABLE_DOCS=true`.
 
 ## Security notes
 
-- All endpoints (except `/api/health`) require a valid MSAL access token for
-  the backend audience; unauthenticated requests return 401.
+- All endpoints (except `/api/health`) require a valid MSAL access token whose
+  audience is the **backend** API app (`api://{AZURE_CLIENT_ID}`); unauthenticated
+  requests return 401.
 - Approver-only routes additionally require the caller to hold the
   Global Administrator or Agent ID Administrator Entra directory role.
 - Token validation uses PyJWT with Entra's JWKS endpoint; audience and

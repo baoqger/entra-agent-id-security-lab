@@ -17,10 +17,12 @@ export const msalConfig = {
   },
 };
 
+const apiClientId = process.env.REACT_APP_API_CLIENT_ID || "";
+
 export const loginRequest = {
-  scopes: [`api://${process.env.REACT_APP_AZURE_CLIENT_ID}/access_as_user`],
+  scopes: [`api://${apiClientId}/access_as_user`],
 };
 
 export const apiScopes = {
-  scopes: [`api://${process.env.REACT_APP_AZURE_CLIENT_ID}/access_as_user`],
+  scopes: [`api://${apiClientId}/access_as_user`],
 };

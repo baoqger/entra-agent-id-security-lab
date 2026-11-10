@@ -29,6 +29,8 @@ Run these once per tenant. After that, the IDs go into each sample's `.env` (loc
 | [`setup-obo-client-app.sh`](setup-obo-client-app.sh) | Same workflow in bash, for CI systems without PowerShell. |
 | [`setup-weather-api-resource.ps1`](setup-weather-api-resource.ps1) | Registers a **custom API** app for the sample `weather-api`, exposes app role `Weather.Read`, assigns it to the Agent Identity (autonomous / custom `aud`). |
 
+For the **Agent Identity Portal** (governance UI under `agent-identity-portal/`), use [`../agent-identity-portal/scripts/setup-portal-entra-apps.ps1`](../agent-identity-portal/scripts/setup-portal-entra-apps.ps1) instead — separate backend + SPA from the sidecar OBO stack.
+
 ## One-shot bootstrap
 
 ```powershell

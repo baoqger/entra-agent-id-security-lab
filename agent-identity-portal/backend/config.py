@@ -1,10 +1,21 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     # Mode toggle
     provisioning_mode: Literal["mock", "live"] = "mock"
+
+    # Local dev only (see auth.py, seed.py, main.py)
+    dev_auth_bypass: bool = False
+    seed_demo_data: bool = False
+    enable_docs: bool = False
 
     # Entra ID
     azure_tenant_id: str = ""
@@ -47,8 +58,6 @@ class Settings(BaseSettings):
 
     # CORS (comma-separated list supported)
     frontend_origin: str = "http://localhost:3000"
-
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
 settings = Settings()
