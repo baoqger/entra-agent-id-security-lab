@@ -26,6 +26,7 @@ CORS(app)  # ⚠️  DEMO ONLY — allows all origins. Restrict in production.
 # ============================================================
 VALIDATE_SIGNATURE = os.environ.get('VALIDATE_TOKEN_SIGNATURE', 'true').lower() == 'true'
 TENANT_ID = os.environ.get('TENANT_ID', '')
+EXPECTED_AUDIENCE = os.environ.get('EXPECTED_AUDIENCE', '').strip()
 EXPECTED_ISSUER = f"https://sts.windows.net/{TENANT_ID}/" if TENANT_ID else ''
 JWKS_URI = f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys" if TENANT_ID else ''
 
@@ -203,14 +204,16 @@ def validate_token(f):
                         signing_key.key,
                         algorithms=["RS256"],
                         issuer=EXPECTED_ISSUER,
+                        audience=EXPECTED_AUDIENCE or None,
                         options={
                             "verify_signature": True,
                             "verify_exp": True,
                             "verify_iss": True,
-                            "verify_aud": False,
+                            "verify_aud": True,
                         },
                     )
-                    print(f"[FULL VALIDATION] ✅ Signature verified, issuer: {decoded.get('iss')}, exp: {decoded.get('exp')}")
+                    print(f"[FULL VALIDATION] ✅ Signature verified, iss: {decoded.get('iss')}, "
+                          f"aud: {decoded.get('aud')}, exp: {decoded.get('exp')}")
                 
                 except jwt.exceptions.InvalidSignatureError as e:
                     app.logger.error(
@@ -294,6 +297,11 @@ def validate_token(f):
             return jsonify({
                 "error": "Invalid issuer",
                 "message": f"Token issuer does not match expected tenant ({EXPECTED_ISSUER})"
+            }), 401
+        except jwt.exceptions.InvalidAudienceError:
+            return jsonify({
+                "error": "Invalid audience",
+                "message": f"Expected aud {EXPECTED_AUDIENCE}",
             }), 401
         except jwt.exceptions.DecodeError as e:
             return jsonify({
@@ -394,6 +402,7 @@ if __name__ == '__main__':
     if VALIDATE_SIGNATURE:
         print(f"  JWKS URI: {JWKS_URI}")
         print(f"  Expected issuer: {EXPECTED_ISSUER}")
+        print(f"  Expected audience: {EXPECTED_AUDIENCE or '(not set)'}")
     print("=" * 60)
     print("Endpoints:")
     print("  GET /health         - Health check (no auth)")
