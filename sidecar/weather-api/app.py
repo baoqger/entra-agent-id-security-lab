@@ -8,7 +8,6 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import jwt
 from jwt import PyJWKClient
-from cryptography.hazmat.primitives import serialization
 import requests
 import random
 from datetime import datetime
@@ -153,11 +152,9 @@ def validate_token(f):
        - Checks Agent Identity claims (xms_frd, xms_par_app_azp)
     
     2. VALIDATE_TOKEN_SIGNATURE=true (production mode):
-       - Fetches signing keys from Entra ID JWKS endpoint
-       - Validates RS256 signature against Microsoft's public keys
-       - Verifies issuer matches the configured tenant
-       - Verifies token is not expired (exp claim)
-       - Checks Agent Identity claims
+       - JWKS RS256 signature, issuer, expiry, and audience (EXPECTED_AUDIENCE)
+       - Any failure returns 401 (no Graph nonce fallback — use custom api:// audience)
+       - Agent Identity claims (xms_frd, xms_par_app_azp)
     """
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -189,70 +186,22 @@ def validate_token(f):
                         "message": "TENANT_ID is required when VALIDATE_TOKEN_SIGNATURE=true"
                     }), 500
                 
-                # 1. Fetch the signing key that matches the token's 'kid' header
                 signing_key = jwks_client.get_signing_key_from_jwt(token)
-                public_key_pem = signing_key.key.public_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PublicFormat.SubjectPublicKeyInfo,
-                ).decode("ascii")
-                print(f"[FULL VALIDATION] Signing key (kid: {signing_key.key_id}):\n{public_key_pem}")
-                
-                # 2. Decode + verify signature, issuer, and expiry
-                try:
-                    decoded = jwt.decode(
-                        token,
-                        signing_key.key,
-                        algorithms=["RS256"],
-                        issuer=EXPECTED_ISSUER,
-                        audience=EXPECTED_AUDIENCE or None,
-                        options={
-                            "verify_signature": True,
-                            "verify_exp": True,
-                            "verify_iss": True,
-                            "verify_aud": True,
-                        },
-                    )
-                    print(f"[FULL VALIDATION] ✅ Signature verified, iss: {decoded.get('iss')}, "
-                          f"aud: {decoded.get('aud')}, exp: {decoded.get('exp')}")
-                
-                except jwt.exceptions.InvalidSignatureError as e:
-                    app.logger.error(
-                        "Token signature verification failed using key ID %r: %s: %s",
-                        signing_key.key_id, type(e).__name__, e,
-                    )
-                    # --------------------------------------------------------
-                    # Microsoft Graph v1 tokens include a 'nonce' in the JWT
-                    # header which modifies how the signature is computed.
-                    # Standard JWT libraries cannot verify these signatures
-                    # without special nonce handling.
-                    #
-                    # For production with Graph-scoped tokens, either:
-                    #   a) Use a custom API audience (not graph.microsoft.com)
-                    #   b) Use Microsoft's MSAL/identity libraries that handle
-                    #      the nonce-based PoP tokens natively
-                    #
-                    # Here we fall back to verifying issuer + expiry without
-                    # signature, and log the Graph nonce limitation.
-                    # --------------------------------------------------------
-                    decoded = jwt.decode(token, options={"verify_signature": False})
-                    
-                    # Still verify issuer and expiry manually
-                    token_iss = decoded.get('iss', '')
-                    if EXPECTED_ISSUER and token_iss != EXPECTED_ISSUER:
-                        raise jwt.exceptions.InvalidIssuerError(
-                            f"Issuer mismatch: {token_iss} != {EXPECTED_ISSUER}")
-                    
-                    import time
-                    token_exp = decoded.get('exp', 0)
-                    if token_exp and token_exp < time.time():
-                        raise jwt.exceptions.ExpiredSignatureError("Token has expired")
-                    
-                    has_nonce = 'nonce' in jwt.get_unverified_header(token)
-                    if has_nonce:
-                        print(f"[FULL VALIDATION] ⚠️  Graph v1 nonce token — signature check skipped "
-                              f"(issuer + expiry verified). Use a custom API audience for full sig verification.")
-                    else:
-                        raise  # Re-raise if not a Graph nonce token
+                decoded = jwt.decode(
+                    token,
+                    signing_key.key,
+                    algorithms=["RS256"],
+                    issuer=EXPECTED_ISSUER,
+                    audience=EXPECTED_AUDIENCE or None,
+                    options={
+                        "verify_signature": True,
+                        "verify_exp": True,
+                        "verify_iss": True,
+                        "verify_aud": bool(EXPECTED_AUDIENCE),
+                    },
+                )
+                print(f"[FULL VALIDATION] ✅ iss: {decoded.get('iss')}, aud: {decoded.get('aud')}, "
+                      f"exp: {decoded.get('exp')}")
             
             else:
                 # ========================================================

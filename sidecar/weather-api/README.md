@@ -10,7 +10,7 @@ This service is intentionally boring. The interesting part is the token validati
 - On every request to `/weather`, validates the `Authorization: Bearer <token>` header:
   - **Signature** — RS256 verified against the JWKS at `https://login.microsoftonline.com/<tenant>/discovery/v2.0/keys`
   - **Issuer** — must match `https://sts.windows.net/<tenant>/` or `https://login.microsoftonline.com/<tenant>/v2.0`
-  - **Audience** — configurable; defaults to Microsoft Graph (`https://graph.microsoft.com`) so the same Agent tokens work for local testing
+  - **Audience** — `EXPECTED_AUDIENCE` (e.g. `api://<weather-api-app-id>` from `setup-weather-api-resource.ps1`)
   - **Agent-identity marker** — the `xms_par_app_azp` claim (present in Agent tokens, absent in plain app-only tokens) is logged so you can see which Blueprint minted the call
 - Returns real weather on success, HTTP 401 with a reason on any validation failure.
 
@@ -35,7 +35,7 @@ Both the [`dev/`](../dev/README.md) (Ollama) and [`aws/`](../aws/README.md) (Bed
 docker build -t weather-api:local .
 docker run --rm -p 8080:8080 \
   -e TENANT_ID=<your-tenant-id> \
-  -e EXPECTED_AUDIENCE=https://graph.microsoft.com \
+  -e EXPECTED_AUDIENCE=api://<weather-api-app-id> \
   weather-api:local
 ```
 
@@ -68,7 +68,7 @@ Expected response (real data):
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `TENANT_ID` | yes | — | Entra tenant — used to build JWKS URL and issuer check |
-| `EXPECTED_AUDIENCE` | no | `https://graph.microsoft.com` | Accepted `aud` value on the token |
+| `EXPECTED_AUDIENCE` | recommended | — (aud not checked if unset) | Must match token `aud` (e.g. `api://<app-id>`). Graph-scoped OBO tokens are rejected until OBO uses the same custom resource. |
 | `PORT` | no | `8080` | HTTP port |
 
 ## Files
