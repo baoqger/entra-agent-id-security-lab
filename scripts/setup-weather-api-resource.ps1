@@ -22,8 +22,7 @@
 #     -EnvFile '..\sidecar\dev\.env' `
 #     -UpdateEnv
 #
-# OBO to this custom API is intentionally out of scope (Phase 2).
-# See scripts/README.md after running.
+# Also adds delegated scope + admin consent for OBO (fixes AADSTS65001).
 # =============================================================================
 
 param(
@@ -33,6 +32,7 @@ param(
     [string]$WeatherApiAppId,
     [string]$AppDisplayName = "Entra Agent ID Sample - Weather API",
     [string]$AppRoleValue = "Weather.Read",
+    [string]$DelegatedScopeValue = "weather.read",
     [switch]$UpdateEnv
 )
 
@@ -105,6 +105,20 @@ function Format-GraphResourceUri {
     return $uri
 }
 
+function ConvertTo-GraphOAuth2Scope {
+    param([Parameter(Mandatory = $true)]$Scope)
+    return [ordered]@{
+        adminConsentDescription = [string]$Scope.adminConsentDescription
+        adminConsentDisplayName = [string]$Scope.adminConsentDisplayName
+        id                      = [string]$Scope.id
+        isEnabled               = [bool]$Scope.isEnabled
+        type                    = [string]$Scope.type
+        userConsentDescription  = [string]$Scope.userConsentDescription
+        userConsentDisplayName  = [string]$Scope.userConsentDisplayName
+        value                   = [string]$Scope.value
+    }
+}
+
 function ConvertTo-GraphAppRoleDefinition {
     param(
         [Parameter(Mandatory = $true)]$Role
@@ -141,7 +155,7 @@ if (-not $AgentAppId) {
 
 Write-Host ""
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-Write-Host "  Weather API resource (custom audience) — autonomous only"
+Write-Host "  Weather API resource (custom audience) — autonomous + OBO"
 Write-Host "  Tenant:     $TenantId"
 Write-Host "  Agent:      $AgentAppId"
 Write-Host "  .env:       $EnvFile"
@@ -161,7 +175,8 @@ Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
 Write-Host "🔐 Connecting to Microsoft Graph..."
 Connect-MgGraph -Scopes @(
     "Application.ReadWrite.All",
-    "AppRoleAssignment.ReadWrite.All"
+    "AppRoleAssignment.ReadWrite.All",
+    "DelegatedPermissionGrant.ReadWrite.All"
 ) -TenantId $TenantId -NoWelcome
 Write-Host "   ✅ Connected"
 Write-Host ""
@@ -281,6 +296,70 @@ if ($role) {
 }
 Write-Host ""
 
+# ── Step 3b: Delegated scope (OBO) ──────────────────────────────────────────
+Write-Host "🔑 Step 3b: Delegated scope '$DelegatedScopeValue' (OBO)..."
+
+# Do not use "$uri?`$select=..." — PowerShell 7 treats ?$ as optional chaining and breaks the URL.
+$apiGetUri = Format-GraphResourceUri -Path "applications/$weatherAppObjectId" -Query '$select=api'
+$patchAppUri = Format-GraphResourceUri -Path "applications/$weatherAppObjectId"
+$apiSnap = Invoke-MgGraphRequest -Method GET -Uri $apiGetUri
+$existingScopes = @()
+if ($apiSnap.api -and $apiSnap.api.oauth2PermissionScopes) {
+    foreach ($s in @($apiSnap.api.oauth2PermissionScopes)) {
+        if ($null -ne $s -and $s.value) { $existingScopes += $s }
+    }
+}
+
+$scopeAlreadyExists = @($existingScopes | Where-Object { $_.value -eq $DelegatedScopeValue }).Count -gt 0
+
+if ($scopeAlreadyExists) {
+    Write-Host "   ✅ Delegated scope already exists"
+} else {
+    $newScope = [ordered]@{
+        id                      = (New-Guid).ToString()
+        adminConsentDescription = "Allow the agent to read weather on behalf of the signed-in user"
+        adminConsentDisplayName = "Read weather as user"
+        isEnabled               = $true
+        type                    = "User"
+        userConsentDescription  = "Allow the agent to read weather on your behalf"
+        userConsentDisplayName  = "Read weather as user"
+        value                   = $DelegatedScopeValue
+    }
+    $scopeByValue = [ordered]@{}
+    foreach ($s in $existingScopes) {
+        $scopeByValue[[string]$s.value] = ConvertTo-GraphOAuth2Scope -Scope $s
+    }
+    $scopeByValue[$DelegatedScopeValue] = ConvertTo-GraphOAuth2Scope -Scope $newScope
+    $allScopes = @($scopeByValue.Values)
+
+    $tokenVersion = 2
+    if ($apiSnap.api -and $apiSnap.api.requestedAccessTokenVersion) {
+        $tokenVersion = [int]$apiSnap.api.requestedAccessTokenVersion
+    }
+    $scopeBody = @{
+        api = @{
+            requestedAccessTokenVersion = $tokenVersion
+            oauth2PermissionScopes      = $allScopes
+        }
+    } | ConvertTo-Json -Depth 12
+
+    try {
+        Invoke-MgGraphRequest -Method PATCH -Uri $patchAppUri -Body $scopeBody -ContentType "application/json"
+        Write-Host "   ✅ Added scope $appIdUri/$DelegatedScopeValue"
+        Start-Sleep -Seconds 5
+    } catch {
+        $detail = [string]$_.ErrorDetails.Message
+        if ($detail -match 'DuplicateValue') {
+            Write-Host "   ✅ Delegated scope already present in tenant (DuplicateValue)"
+        } else {
+            if ($detail) { Write-Host "   Graph: $detail" }
+            Write-Error "Failed to add delegated scope: $($_.Exception.Message)"
+            exit 1
+        }
+    }
+}
+Write-Host ""
+
 # ── Step 4: Service principal for Weather API ─────────────────────────────
 Write-Host "👤 Step 4: Weather API service principal..."
 $spResult = Invoke-MgGraphRequest -Method GET `
@@ -351,9 +430,46 @@ if ($alreadyAssigned) {
 }
 Write-Host ""
 
-# ── Step 6: Optional .env ──────────────────────────────────────────────────
+# ── Step 6: Admin consent — Agent → Weather API (OBO) ─────────────────────
+Write-Host "🛡️  Step 6: Admin consent Agent → Weather API (OBO)..."
+
+try {
+    $grantFilter = "clientId eq '$agentSpId' and resourceId eq '$weatherSpId'"
+    $existingGrant = Invoke-MgGraphRequest -Method GET `
+        -Uri "https://graph.microsoft.com/v1.0/oauth2PermissionGrants?`$filter=$grantFilter"
+    $grant = $null
+    if ($existingGrant.value -and $existingGrant.value.Count -gt 0) {
+        $grant = $existingGrant.value[0]
+    }
+    if ($grant -and ($grant.scope -split '\s+') -contains $DelegatedScopeValue) {
+        Write-Host "   ✅ Already consented (scope: $($grant.scope))"
+    } elseif ($grant) {
+        $mergedScope = ($grant.scope.Trim() + " $DelegatedScopeValue").Trim() -replace '\s+', ' '
+        Invoke-MgGraphRequest -Method PATCH `
+            -Uri "https://graph.microsoft.com/v1.0/oauth2PermissionGrants/$($grant.id)" `
+            -Body (@{ scope = $mergedScope } | ConvertTo-Json) `
+            -ContentType "application/json"
+        Write-Host "   ✅ Updated grant: $mergedScope"
+    } else {
+        $grantBody = @{
+            clientId    = $agentSpId
+            consentType = "AllPrincipals"
+            resourceId  = $weatherSpId
+            scope       = $DelegatedScopeValue
+        } | ConvertTo-Json
+        Invoke-MgGraphRequest -Method POST `
+            -Uri "https://graph.microsoft.com/v1.0/oauth2PermissionGrants" `
+            -Body $grantBody -ContentType "application/json" | Out-Null
+        Write-Host "   ✅ Granted Agent → Weather API ($DelegatedScopeValue)"
+    }
+} catch {
+    Write-Host "   ⚠️  OBO consent failed: $($_.Exception.Message)"
+}
+Write-Host ""
+
+# ── Step 7: Optional .env ──────────────────────────────────────────────────
 if ($UpdateEnv) {
-    Write-Host "📝 Step 6: Updating $EnvFile ..."
+    Write-Host "📝 Step 7: Updating $EnvFile ..."
     Set-DotEnvValue -Path $EnvFile -Key "WEATHER_API_APP_ID" -Value $weatherApiAppIdResolved `
         -Comment "# Custom API audience for weather-api (see setup-weather-api-resource.ps1)"
     Write-Host "   ✅ WEATHER_API_APP_ID"
@@ -362,16 +478,15 @@ if ($UpdateEnv) {
 
 # ── Summary ───────────────────────────────────────────────────────────────
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-Write-Host "  ✅ Weather API resource ready (autonomous)"
+Write-Host "  ✅ Weather API resource ready (autonomous + OBO)"
 Write-Host ""
 Write-Host "  Weather API App ID:     $weatherApiAppIdResolved"
 Write-Host "  Application ID URI:   $appIdUri"
 Write-Host "  App role:               $AppRoleValue"
-Write-Host "  Sidecar scope:          $scopeForSidecar"
+Write-Host "  Delegated scope (OBO):  $DelegatedScopeValue"
+Write-Host "  Sidecar scope (both):   $scopeForSidecar"
 Write-Host ""
-Write-Host "  Patch sidecar/dev/docker-compose.yml (sidecar service):"
-Write-Host "    - DownstreamApis__weather-app__Scopes__0=$scopeForSidecar"
-Write-Host "    # OBO (Phase 2): keep Graph on DownstreamApis__weather__ for now"
+Write-Host "  Verify: pwsh ./verify-weather-obo-entra.ps1"
 Write-Host ""
 Write-Host "  Optional weather-api audience check (follow-up in Flask app):"
 Write-Host "    EXPECTED_AUDIENCE=$appIdUri"

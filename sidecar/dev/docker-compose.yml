@@ -25,9 +25,9 @@ services:
       - DownstreamApis__weather-app__Scopes__0=api://${WEATHER_API_APP_ID}/.default
       - DownstreamApis__weather-app__RequestAppToken=true
       
-      # Downstream API: OBO / delegated (on-behalf-of user) — still Graph until Phase 2
+      # Downstream API: OBO / delegated (on-behalf-of user)
       - DownstreamApis__weather__BaseUrl=http://weather-api:8080/
-      - DownstreamApis__weather__Scopes__0=https://graph.microsoft.com/.default
+      - DownstreamApis__weather__Scopes__0=api://${WEATHER_API_APP_ID}/.default
       
       # ASP.NET Core settings
       - ASPNETCORE_ENVIRONMENT=Production
